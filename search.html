@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>搜索 · 校园失物招领</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+<div class="app">
+  <div id="topbar"></div>
+
+  <main class="page">
+    <!-- 搜索行 -->
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 16px 4px">
+      <button class="back" type="button" id="backBtn" aria-label="返回"
+              style="width:30px;height:30px;border:0;background:transparent;color:var(--ink);cursor:pointer;margin-left:-8px">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg>
+      </button>
+      <div class="search-bar" style="flex:1">
+        <svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.6"/><path d="M16.2 16.2L20.5 20.5"/></svg>
+        <input id="kw" type="search" placeholder="物品名称、描述或地点" autocomplete="off">
+        <button class="clear" type="button" id="clearBtn" aria-label="清空">✕</button>
+      </div>
+      <button type="button" id="cancelBtn" style="border:0;background:transparent;font-size:14px;color:var(--ink-2);cursor:pointer">取消</button>
+    </div>
+
+    <!-- 搜索建议区（无关键词时显示） -->
+    <section id="suggest" class="section" hidden>
+      <div class="section-head">
+        <h2>搜索历史</h2>
+        <div class="right"><button class="pill" type="button" id="clearHis">清空</button></div>
+      </div>
+      <div class="chip-row" id="hisRow"></div>
+
+      <div class="section-head" style="margin-top:22px">
+        <h2>大家都在找</h2>
+        <div class="right"><span style="font-size:12px;color:var(--ink-3)">近 7 天</span></div>
+      </div>
+      <div class="chip-row" id="hotRow"></div>
+
+      <div class="notice" style="margin-top:22px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.6v5.2"/><circle cx="12" cy="16.4" r=".7" fill="currentColor" stroke="none"/></svg>
+        <span>搜索会同时匹配物品名称、描述文字和地点三类内容。找不到时不妨换个说法，比如「水杯」也可以试试「保温杯」。</span>
+      </div>
+    </section>
+
+    <!-- 结果区 -->
+    <section id="result" class="section" hidden>
+      <div class="result-head">
+        <span class="count" id="countText"></span>
+      </div>
+      <div class="chip-row" id="filterRow" style="margin-bottom:4px"></div>
+      <div class="chip-row" id="placeRow" style="margin-bottom:12px"></div>
+      <div class="item-list" id="list"></div>
+      <div id="emptyBox" hidden></div>
+      <p style="margin:20px 0 8px;font-size:11.5px;color:var(--ink-3);text-align:center">
+        只显示最近 30 天的信息 · 没有找到？<a href="publish.html" style="color:var(--orange);font-weight:600">试试发布一条寻物信息</a>
+      </p>
+    </section>
+  </main>
+
+  <div id="tabbar"></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/repo.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var LF = window.LF, UI = LF.UI, C = LF.CONFIG;
+
+  UI.mountShell({});   // 本页使用自定义搜索行，顶栏与底部导航留空
+
+  var repo = LF.createRepo({ storage: LF.browserStorage(), key: C.ITEM_KEY, seed: LF.createSeedItems() });
+  repo.load();
+
+  var state = { keyword: '', type: 'all', place: 'all', status: 'all', category: 'all', sort: 'new' };
+  var input = document.getElementById('kw');
+
+  /* ---------- 搜索历史 ---------- */
+  function readHistory() {
+    try { return JSON.parse(localStorage.getItem(C.HISTORY_KEY)) || []; } catch (e) { return []; }
+  }
+  function pushHistory(kw) {
+    var word = LF.trim(kw);
+    if (!word) return;
+    var list = readHistory().filter(function (w) { return w !== word; });
+    list.unshift(word);
+    try { localStorage.setItem(C.HISTORY_KEY, JSON.stringify(list.slice(0, 8))); } catch (e) {}
+  }
+
+  function renderHistory() {
+    var list = readHistory();
+    document.getElementById('hisRow').innerHTML = list.length
+      ? list.map(function (w) { return '<button class="chip" type="button" data-kw="' + UI.escapeHtml(w) + '">' + UI.escapeHtml(w) + '</button>'; }).join('')
+      : '<span style="font-size:12.5px;color:var(--ink-3)">还没有搜索记录</span>';
+    document.getElementById('clearHis').style.display = list.length ? '' : 'none';
+  }
+
+  function renderHot() {
+    document.getElementById('hotRow').innerHTML = LF.HOT_WORDS.map(function (w, i) {
+      return '<button class="chip hot" type="button" data-kw="' + w + '">' +
+        '<span class="rk">' + (i + 1) + '</span>' + w + '</button>';
+    }).join('');
+  }
+
+  /* ---------- 结果渲染 ---------- */
+  /**
+   * 顶部四个筛选标签：全部 / 招领 / 寻物 按「类型」过滤，已完成 按「状态」过滤
+   * 前三个和第四个互斥，选中「已完成」时类型回到全部
+   */
+  function activeFilter() {
+    if (state.status === 'done') return 'done';
+    if (state.type === 'found') return 'found';
+    if (state.type === 'lost') return 'lost';
+    return 'all';
+  }
+
+  function renderFilters() {
+    var chips = [
+      { key: 'all', label: '全部' },
+      { key: 'found', label: '招领' },
+      { key: 'lost', label: '寻物' },
+      { key: 'done', label: '已完成' }
+    ];
+    var now = activeFilter();
+    document.getElementById('filterRow').innerHTML = chips.map(function (c) {
+      return '<button class="chip' + (now === c.key ? ' on' : '') + '" type="button" data-filter="' + c.key + '">' + c.label + '</button>';
+    }).join('');
+
+    var places = ['all'].concat(C.PLACES);
+    document.getElementById('placeRow').innerHTML = places.map(function (p) {
+      var label = p === 'all' ? '全部地点' : p;
+      return '<button class="chip' + (state.place === p ? ' on' : '') + '" type="button" data-place="' + p + '">' + label + '</button>';
+    }).join('');
+  }
+
+  function renderResult() {
+    var query = {
+      keyword: state.keyword,
+      type: state.type,
+      place: state.place,
+      category: state.category,
+      status: state.status,
+      sort: state.sort
+    };
+    var list = repo.search(query);
+    var box = document.getElementById('list');
+    var empty = document.getElementById('emptyBox');
+
+    document.getElementById('countText').innerHTML = state.keyword
+      ? '「' + UI.escapeHtml(state.keyword) + '」共找到 <b>' + list.length + '</b> 条信息'
+      : '共 <b>' + list.length + '</b> 条信息';
+
+    if (list.length) {
+      empty.hidden = true;
+      box.innerHTML = list.map(function (it) { return UI.itemCard(it, { keyword: state.keyword }); }).join('');
+    } else {
+      box.innerHTML = '';
+      empty.hidden = false;
+      var words = LF.suggestKeywords(state.keyword, repo.all(), 4);
+      empty.innerHTML =
+        '<div class="empty">' +
+          '<div class="ic">' + UI.icon('search', 30) + '</div>' +
+          '<h3>没有找到「' + UI.escapeHtml(state.keyword || '该条件') + '」</h3>' +
+          '<p>可能是还没人发布，也可能描述不太一样。<br>建议换个关键词，或自己发一条寻物信息。</p>' +
+        '</div>' +
+        (words.length
+          ? '<div class="card" style="padding:16px;margin-top:4px">' +
+              '<h3 style="font-size:14px;margin-bottom:10px">换个说法试试</h3>' +
+              '<div class="chip-row">' + words.map(function (w) {
+                return '<button class="chip" type="button" data-kw="' + UI.escapeHtml(w) + '">' + UI.escapeHtml(w) + '</button>';
+              }).join('') + '</div></div>'
+          : '') +
+        '<a class="btn btn-orange btn-block" style="margin-top:14px" href="publish.html?type=lost">＋ 发布寻物信息</a>';
+    }
+  }
+
+  function showSuggest() {
+    document.getElementById('suggest').hidden = false;
+    document.getElementById('result').hidden = true;
+  }
+  function showResult() {
+    document.getElementById('suggest').hidden = true;
+    document.getElementById('result').hidden = false;
+    renderFilters();
+    renderResult();
+  }
+
+  /* ---------- 事件 ---------- */
+  function doSearch(kw) {
+    state.keyword = LF.trim(kw);
+    input.value = state.keyword;
+    document.getElementById('clearBtn').classList.toggle('show', !!state.keyword);
+    if (state.keyword) pushHistory(state.keyword);
+    if (state.keyword || state.category !== 'all') showResult();
+    else showSuggest();
+  }
+
+  input.addEventListener('input', function () {
+    document.getElementById('clearBtn').classList.toggle('show', !!input.value);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') doSearch(input.value);
+  });
+  document.getElementById('clearBtn').addEventListener('click', function () {
+    input.value = '';
+    state.keyword = '';
+    this.classList.remove('show');
+    input.focus();
+    showSuggest();
+    renderHistory();
+  });
+  document.getElementById('cancelBtn').addEventListener('click', function () { location.href = 'index.html'; });
+  document.getElementById('backBtn').addEventListener('click', function () { history.back(); });
+  document.getElementById('clearHis').addEventListener('click', function () {
+    try { localStorage.removeItem(C.HISTORY_KEY); } catch (e) {}
+    renderHistory();
+  });
+
+  document.addEventListener('click', function (e) {
+    var kwBtn = e.target.closest('[data-kw]');
+    if (kwBtn) { doSearch(kwBtn.dataset.kw); input.focus(); return; }
+
+    var st = e.target.closest('[data-filter]');
+    if (st) {
+      var key = st.dataset.filter;
+      if (key === 'done') { state.type = 'all'; state.status = 'done'; }
+      else if (key === 'all') { state.type = 'all'; state.status = 'all'; }
+      else { state.type = key; state.status = 'all'; }
+      renderFilters(); renderResult(); return;
+    }
+    var pl = e.target.closest('[data-place]');
+    if (pl) { state.place = pl.dataset.place; renderFilters(); renderResult(); }
+  });
+
+  UI.bindItemList(document.getElementById('list'));
+
+  /* ---------- 初始化：支持 index.html 的分类 / 关键词直达 ---------- */
+  var qs = new URLSearchParams(location.search);
+  if (qs.get('category')) state.category = qs.get('category');
+  if (qs.get('q')) state.keyword = qs.get('q');
+
+  renderHistory();
+  renderHot();
+
+  if (state.keyword || state.category !== 'all') {
+    input.value = state.keyword;
+    document.getElementById('clearBtn').classList.toggle('show', !!state.keyword);
+    showResult();
+    if (state.category !== 'all') {
+      var extra = document.createElement('p');
+      extra.style.cssText = 'margin-bottom:10px;font-size:12.5px;color:var(--ink-2)';
+      extra.innerHTML = '分类：<b>' + LF.categoryLabel(state.category) + '</b>　' +
+        '<a href="search.html" style="color:var(--orange)">清除</a>';
+      document.getElementById('filterRow').before(extra);
+    }
+  } else {
+    showSuggest();
+    input.focus();
+  }
+})();
+</script>
+</body>
+</html>
