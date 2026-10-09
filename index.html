@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>校园失物招领</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+<div class="app">
+  <div id="topbar"></div>
+
+  <main class="page">
+    <!-- 顶部搜索区 -->
+    <section class="hero">
+      <div class="hero-top">
+        <h1>校园失物招领</h1>
+        <span class="who">同学，你好</span>
+      </div>
+      <div class="hero-search" id="goSearch" role="button" tabindex="0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="6.6"/><path d="M16.2 16.2L20.5 20.5"/>
+        </svg>
+        <span>搜索物品名称、描述文字或地点…</span>
+      </div>
+      <div class="hero-stat" id="heroStat"></div>
+    </section>
+
+    <!-- 分类快捷入口 -->
+    <div class="cat-grid" id="catGrid"></div>
+
+    <!-- 类型切换 -->
+    <div class="section">
+      <div class="segment" id="typeSeg">
+        <button type="button" data-type="all" class="on">全部</button>
+        <button type="button" data-type="lost">寻物</button>
+        <button type="button" data-type="found">招领</button>
+      </div>
+    </div>
+
+    <!-- 信息流 -->
+    <div class="section">
+      <div class="section-head">
+        <h2>最新信息</h2>
+        <div class="right">
+          <button class="pill" type="button" id="placeBtn"></button>
+          <button class="pill" type="button" id="sortBtn"></button>
+        </div>
+      </div>
+      <div class="item-list" id="list"></div>
+    </div>
+
+    <div class="section" id="emptyBox" hidden></div>
+  </main>
+
+  <a class="fab" href="publish.html" id="fab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    发布信息
+  </a>
+
+  <div id="tabbar"></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/repo.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var LF = window.LF, UI = LF.UI, C = LF.CONFIG;
+
+  UI.mountShell({ tab: 'home' });
+
+  var repo = LF.createRepo({
+    storage: LF.browserStorage(),
+    key: C.ITEM_KEY,
+    seed: LF.createSeedItems()
+  });
+  repo.load();
+
+  var state = { type: 'all', place: 'all', sort: 'new' };
+
+  /* ---------- 顶部数据反馈 ---------- */
+  function renderStat() {
+    var s = repo.stats();
+    document.getElementById('heroStat').innerHTML =
+      '<span class="dot"></span>已帮助 <b>' + s.done + '</b> 件物品回到主人身边' +
+      ' · 当前 <b>' + s.active + '</b> 条信息在架';
+  }
+
+  /* ---------- 分类快捷入口 ---------- */
+  function renderCats() {
+    document.getElementById('catGrid').innerHTML = C.CATEGORIES.map(function (c) {
+      return '<div class="cat" data-cat="' + c.key + '" tabindex="0">' +
+        '<div class="ic">' + UI.categoryIcon(c.key, 20) + '</div>' +
+        '<span class="lb">' + c.label + '</span></div>';
+    }).join('');
+  }
+
+  /* ---------- 信息流 ---------- */
+  function currentList() {
+    return repo.search({ keyword: '', type: state.type, place: state.place, status: 'all', sort: state.sort });
+  }
+
+  function renderList() {
+    var list = currentList();
+    var box = document.getElementById('list');
+    var empty = document.getElementById('emptyBox');
+
+    if (!list.length) {
+      box.innerHTML = '';
+      empty.hidden = false;
+      empty.innerHTML =
+        '<div class="empty">' +
+          '<div class="ic">' + UI.icon('search', 30) + '</div>' +
+          '<h3>这个条件下还没有信息</h3>' +
+          '<p>换个类型或地点看看，<br>也可以自己发一条，让同学帮你留意。</p>' +
+          '<div style="margin-top:18px"><a class="btn btn-orange" href="publish.html">去发布</a></div>' +
+        '</div>';
+      return;
+    }
+    empty.hidden = true;
+    box.innerHTML = list.map(function (it) { return UI.itemCard(it); }).join('');
+  }
+
+  /* ---------- 交互 ---------- */
+  document.getElementById('typeSeg').addEventListener('click', function (e) {
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    state.type = btn.dataset.type;
+    [].forEach.call(this.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b === btn);
+    });
+    renderList();
+  });
+
+  document.getElementById('catGrid').addEventListener('click', function (e) {
+    var cat = e.target.closest('.cat');
+    if (cat) location.href = 'search.html?category=' + cat.dataset.cat;
+  });
+
+  document.getElementById('placeBtn').addEventListener('click', function () {
+    var html = '<h3>选择地点</h3><div class="chip-row">' +
+      ['all'].concat(C.PLACES).map(function (p) {
+        var label = p === 'all' ? '全部地点' : p;
+        return '<button class="chip' + (state.place === p ? ' on' : '') + '" type="button" data-place="' + p + '">' + label + '</button>';
+      }).join('') + '</div>';
+    var mask = UI.openSheet(html);
+    mask.addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-place]');
+      if (!chip) return;
+      state.place = chip.dataset.place;
+      UI.closeSheet();
+      renderPills();
+      renderList();
+    });
+  });
+
+  document.getElementById('sortBtn').addEventListener('click', function () {
+    state.sort = state.sort === 'new' ? 'old' : 'new';
+    renderPills();
+    renderList();
+  });
+
+  function renderPills() {
+    var p = state.place === 'all' ? '全部地点' : state.place;
+    document.getElementById('placeBtn').innerHTML =
+      UI.icon('location', 12) + p +
+      '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    document.getElementById('sortBtn').innerHTML = (state.sort === 'new' ? '最新' : '最早');
+  }
+
+  var go = document.getElementById('goSearch');
+  go.addEventListener('click', function () { location.href = 'search.html'; });
+  go.addEventListener('keydown', function (e) { if (e.key === 'Enter') location.href = 'search.html'; });
+
+  /* 点击信息卡片 → 打开详情页 */
+  UI.bindItemList(document.getElementById('list'));
+
+  /* ---------- 初始化 ---------- */
+  renderStat();
+  renderCats();
+  renderPills();
+  renderList();
+})();
+</script>
+</body>
+</html>
