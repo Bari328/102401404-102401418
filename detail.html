@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>信息详情 · 校园失物招领</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+<div class="app">
+  <div id="topbar"></div>
+  <main class="page" id="page"></main>
+  <div class="actionbar" id="actionbar"></div>
+  <div id="tabbar"></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/repo.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var LF = window.LF, UI = LF.UI, C = LF.CONFIG;
+
+  UI.mountShell({});
+
+  var repo = LF.createRepo({ storage: LF.browserStorage(), key: C.ITEM_KEY, seed: LF.createSeedItems() });
+  repo.load();
+
+  var id = UI.param('id');
+  var item = id ? repo.find(id) : null;
+
+  /* ---------- 找不到信息 ---------- */
+  if (!item) {
+    document.getElementById('page').innerHTML =
+      '<div class="empty" style="padding-top:88px">' +
+        '<div class="ic">' + UI.icon('search', 30) + '</div>' +
+        '<h3>这条信息不存在或已被删除</h3>' +
+        '<p>可能发布者已经把它下架了。</p>' +
+        '<div style="margin-top:18px"><a class="btn" href="index.html">返回首页</a></div>' +
+      '</div>';
+    document.getElementById('actionbar').className = '';
+    return;
+  }
+
+  var isMine = item.ownerId === (localStorage.getItem(C.USER_KEY) || 'local-user');
+  var done = item.status === 'done';
+  var type = LF.typeInfo(item.type);
+
+  /* ---------- 顶栏 ---------- */
+  UI.mountShell({
+    title: '',
+    actions: ''
+  });
+
+  /* ---------- 内容 ---------- */
+  var photo = item.photos && item.photos[0]
+    ? '<img src="' + item.photos[0] + '" alt="物品照片">'
+    : UI.categoryIcon(item.category, 64);
+
+  var tags =
+    '<span class="tag ' + (item.type === 'lost' ? 'tag-lost' : 'tag-found') + '">' + type.label + '</span>' +
+    (done
+      ? '<span class="tag tag-done">' + LF.doneLabel(item.type) + '</span>'
+      : '<span class="tag tag-line">未完成</span>');
+
+  document.getElementById('page').innerHTML =
+    '<div class="detail-photo">' + photo +
+      '<button class="back" type="button" id="backBtn" aria-label="返回" ' +
+        'style="position:absolute;left:12px;top:12px;width:34px;height:34px;border-radius:50%;border:0;' +
+        'background:rgba(255,255,255,.9);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink)">' +
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg>' +
+      '</button>' +
+      '<div class="detail-tags">' + tags + '</div>' +
+    '</div>' +
+
+    '<div class="detail-body">' +
+      '<div class="detail-card">' +
+        '<h1>' + UI.escapeHtml(item.title) + '</h1>' +
+        '<div class="detail-rows">' +
+          '<div class="row"><span class="k">物品类别</span><span class="v">' + LF.categoryLabel(item.category) + '</span></div>' +
+          '<div class="row"><span class="k">' + type.verb + '地点</span><span class="v">' + UI.escapeHtml(item.place) + '</span></div>' +
+          '<div class="row"><span class="k">' + type.verb + '日期</span><span class="v">' + UI.escapeHtml(item.date) + '</span></div>' +
+          '<div class="row"><span class="k">发布时间</span><span class="v">' + LF.formatDate(item.createdAt) + '　（' + LF.timeAgo(item.createdAt) + '）</span></div>' +
+          '<div class="row"><span class="k">剩余展示</span><span class="v">' + LF.daysLeft(item) + ' 天后自动下架</span></div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="detail-desc">' +
+        '<h2>' + (item.type === 'lost' ? '丢失说明' : '详细说明') + '</h2>' +
+        '<p>' + (UI.escapeHtml(item.desc) || '发布者没有留下更多说明。') + '</p>' +
+      '</div>' +
+
+      '<div class="notice">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.6v5.2"/><circle cx="12" cy="16.4" r=".7" fill="currentColor" stroke="none"/></svg>' +
+        '<span>请先核对物品特征再联系，谨防冒领；校园卡、证件等物品建议在教学楼值班室等公共场所当面交接。</span>' +
+      '</div>' +
+
+      '<div style="height:16px"></div>' +
+    '</div>';
+
+  document.getElementById('backBtn').addEventListener('click', function () {
+    if (history.length > 1) history.back();
+    else location.href = 'index.html';
+  });
+
+  /* ---------- 底部操作栏 ---------- */
+  var bar = document.getElementById('actionbar');
+
+  function renderBar() {
+    if (isMine) {
+      bar.innerHTML =
+        (done
+          ? '<button class="btn btn-ghost" type="button" id="reopenBtn">恢复为进行中</button>'
+          : '<button class="btn btn-green" type="button" id="doneBtn">标记为' + LF.doneLabel(item.type) + '</button>') +
+        '<button class="btn btn-ghost" type="button" id="delBtn" style="flex:0 0 92px">删除</button>';
+    } else {
+      bar.innerHTML = '<button class="btn" type="button" id="contactBtn" style="flex:1">查看联系方式</button>';
+    }
+    bindBar();
+  }
+
+  function refresh() {
+    item = repo.find(id);
+    done = item.status === 'done';
+    var tagBox = document.querySelector('.detail-tags');
+    tagBox.innerHTML =
+      '<span class="tag ' + (item.type === 'lost' ? 'tag-lost' : 'tag-found') + '">' + type.label + '</span>' +
+      (done ? '<span class="tag tag-done">' + LF.doneLabel(item.type) + '</span>'
+            : '<span class="tag tag-line">未完成</span>');
+    renderBar();
+  }
+
+  function bindBar() {
+    var contactBtn = document.getElementById('contactBtn');
+    if (contactBtn) contactBtn.addEventListener('click', openContact);
+
+    var doneBtn = document.getElementById('doneBtn');
+    if (doneBtn) doneBtn.addEventListener('click', function () {
+      repo.setStatus(id, 'done');
+      refresh();
+      UI.toast('已标记为' + LF.doneLabel(item.type) + '，其他同学不会再看到「未完成」标签');
+    });
+
+    var reopenBtn = document.getElementById('reopenBtn');
+    if (reopenBtn) reopenBtn.addEventListener('click', function () {
+      repo.setStatus(id, 'active');
+      refresh();
+      UI.toast('已恢复为进行中');
+    });
+
+    var delBtn = document.getElementById('delBtn');
+    if (delBtn) delBtn.addEventListener('click', function () {
+      var mask = UI.openSheet(
+        '<h3>确认删除这条信息？</h3>' +
+        '<p style="font-size:13px;color:var(--ink-2);line-height:1.7">删除后无法恢复，其他同学也搜不到它了。</p>' +
+        '<div class="foot">' +
+          '<button class="btn btn-ghost" type="button" data-close>再想想</button>' +
+          '<button class="btn btn-orange" type="button" data-confirm>删除</button>' +
+        '</div>');
+      mask.addEventListener('click', function (e) {
+        if (e.target.closest('[data-close]')) UI.closeSheet();
+        if (e.target.closest('[data-confirm]')) {
+          repo.remove(id);
+          UI.closeSheet();
+          location.href = 'mine.html';
+        }
+      });
+    });
+  }
+
+  function openContact() {
+    var mask = UI.openSheet(
+      '<h3>联系发布者</h3>' +
+      '<div class="contact">联系方式：<b id="contactText">' + UI.escapeHtml(item.contact) + '</b></div>' +
+      '<div class="rows">' +
+        '<span>· 请先核对物品特征（颜色、划痕、附件等）再联系</span>' +
+        '<span>· 建议在教学楼值班室、图书馆前台等公共场所当面交接</span>' +
+        '<span>· 交接完成后，记得让发布者把信息标记为' + LF.doneLabel(item.type) + '</span>' +
+      '</div>' +
+      '<div class="foot">' +
+        '<button class="btn btn-ghost" type="button" data-close>关闭</button>' +
+        '<button class="btn" type="button" data-copy>一键复制</button>' +
+      '</div>');
+    mask.addEventListener('click', function (e) {
+      if (e.target.closest('[data-close]')) UI.closeSheet();
+      if (e.target.closest('[data-copy]')) {
+        UI.copyText(item.contact).then(function () {
+          UI.toast('联系方式已复制');
+        }).catch(function () {
+          UI.toast('复制失败，请长按手动复制');
+        });
+      }
+    });
+  }
+
+  renderBar();
+})();
+</script>
+</body>
+</html>
