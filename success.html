@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>发布成功 · 校园失物招领</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+<div class="app">
+  <div id="topbar"></div>
+  <main class="page" id="page"></main>
+  <div id="tabbar"></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/repo.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var LF = window.LF, UI = LF.UI, C = LF.CONFIG;
+
+  UI.mountShell({ title: '', back: 'index.html' });
+
+  var repo = LF.createRepo({ storage: LF.browserStorage(), key: C.ITEM_KEY, seed: LF.createSeedItems() });
+  repo.load();
+
+  var item = repo.find(UI.param('id'));
+  var title = item ? item.title : '这条信息';
+  var typeText = item ? (item.type === 'lost' ? '寻物' : '招领') : '发布';
+
+  document.getElementById('page').innerHTML =
+    '<div class="success">' +
+      '<div class="circle">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.6 4.6L19 7.4"/></svg>' +
+      '</div>' +
+      '<h1>发布成功</h1>' +
+      '<p>你的' + typeText + '信息「' + UI.escapeHtml(title) + '」<br>已经进入信息池，其他同学可以搜到它。</p>' +
+
+      '<div class="tips">' +
+        '<div class="tip">' + UI.icon('check', 16) + '<span>已通过内容校验，无需等待审核</span></div>' +
+        '<div class="tip">' + UI.icon('bell', 16) + '<span>有同学在详情页看到你的联系方式，就能直接找到你</span></div>' +
+        '<div class="tip">' + UI.icon('clock', 16) + '<span>信息将展示 30 天，找到后请及时标记为「' + (item ? LF.doneLabel(item.type) : '已找到') + '」</span></div>' +
+      '</div>' +
+
+      '<div class="success-actions">' +
+        '<a class="btn btn-block" href="mine.html">查看我的发布</a>' +
+        '<a class="btn btn-ghost btn-block" href="' + (item ? 'detail.html?id=' + encodeURIComponent(item.id) : 'index.html') + '">查看这条信息</a>' +
+        '<a class="btn btn-ghost btn-block" href="index.html">返回首页</a>' +
+      '</div>' +
+    '</div>';
+})();
+</script>
+</body>
+</html>

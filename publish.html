@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>发布信息 · 校园失物招领</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+<div class="app">
+  <div id="topbar"></div>
+
+  <main class="page">
+    <div class="form-intro">
+      <h1>发布一条信息</h1>
+      <p>选好类型再填写，信息越具体越容易被认领。带 <em style="color:var(--orange);font-style:normal">*</em> 为必填项。</p>
+
+      <!-- 类型选择 -->
+      <div class="type-cards" id="typeCards">
+        <button class="type-card" type="button" data-type="lost">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.6"/><path d="M16.2 16.2L20.5 20.5"/></svg>
+          </div>
+          <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.6 4.6L19 7.4"/></svg></span>
+          <h3>我丢了东西</h3>
+          <p>发布寻物信息，等待好心人联系</p>
+        </button>
+        <button class="type-card" type="button" data-type="found">
+          <div class="ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20.3s7-4.3 7-9.5A7 7 0 005 10.8c0 5.2 7 9.5 7 9.5z"/><path d="M9.2 10.6l2 2 3.6-3.6"/></svg>
+          </div>
+          <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.6 4.6L19 7.4"/></svg></span>
+          <h3>我捡到东西</h3>
+          <p>发布招领信息，帮它找到主人</p>
+        </button>
+      </div>
+    </div>
+
+    <!-- 照片 -->
+    <div class="field-block">
+      <div class="field-label">物品照片 <span class="hint">最多 3 张，建议拍清楚特征</span></div>
+      <div class="photo-row" id="photoRow"></div>
+      <input type="file" id="photoInput" accept="image/*" hidden>
+      <div class="err" data-err="photos"></div>
+    </div>
+
+    <!-- 表单 -->
+    <div class="field-block">
+      <label class="field-label" for="f-title">物品名称 <em>*</em></label>
+      <input class="control" id="f-title" type="text" maxlength="30" placeholder="例如：校园卡（姓名）、黑色长柄雨伞">
+      <div class="err" data-err="title"></div>
+    </div>
+
+    <div class="field-block">
+      <label class="field-label" for="f-category">物品类别 <em>*</em></label>
+      <select class="control" id="f-category"></select>
+      <div class="err" data-err="category"></div>
+    </div>
+
+    <div class="field-block" style="display:flex;gap:10px">
+      <div style="flex:1">
+        <label class="field-label" for="f-place"><span id="placeLabel">地点</span> <em>*</em></label>
+        <select class="control" id="f-place"></select>
+        <div class="err" data-err="place"></div>
+      </div>
+      <div style="flex:1">
+        <label class="field-label" for="f-date">日期 <em>*</em></label>
+        <input class="control" id="f-date" type="date">
+        <div class="err" data-err="date"></div>
+      </div>
+    </div>
+
+    <div class="field-block">
+      <label class="field-label" for="f-desc">详细说明 <span class="hint">选填，最多 200 字</span></label>
+      <textarea class="control" id="f-desc" maxlength="200"
+        placeholder="补充颜色、划痕、附件等特征，以及具体位置（例如：A203 教室最后一排）"></textarea>
+      <div class="err" data-err="desc"></div>
+    </div>
+
+    <div class="field-block" style="padding-bottom:8px">
+      <label class="field-label" for="f-contact">联系方式 <em>*</em></label>
+      <input class="control" id="f-contact" type="text" maxlength="40" placeholder="例如：微信 xiaoli_2023 或 手机 13800001234">
+      <div class="err" data-err="contact"></div>
+      <p style="font-size:11.5px;color:var(--ink-3);margin-top:8px">联系方式只在详情页显示，供认领的同学查看。</p>
+    </div>
+  </main>
+
+  <div class="submitbar">
+    <button class="btn btn-block" type="button" id="submitBtn">立即发布</button>
+    <p class="tip">发布后可在「我的 - 我的发布」中随时修改或标记为已归还</p>
+  </div>
+
+  <div id="tabbar"></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/repo.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var LF = window.LF, UI = LF.UI, C = LF.CONFIG;
+
+  UI.mountShell({ title: '发布信息', back: 'index.html' });
+
+  var repo = LF.createRepo({ storage: LF.browserStorage(), key: C.ITEM_KEY, seed: LF.createSeedItems() });
+  repo.load();
+
+  var state = { type: 'lost', photos: [] };
+
+  /* ---------- 初始化下拉框 ---------- */
+  document.getElementById('f-category').innerHTML =
+    '<option value="">请选择类别</option>' +
+    C.CATEGORIES.map(function (c) { return '<option value="' + c.key + '">' + c.label + '</option>'; }).join('');
+
+  document.getElementById('f-place').innerHTML =
+    '<option value="">请选择地点</option>' +
+    C.PLACES.map(function (p) { return '<option value="' + p + '">' + p + '</option>'; }).join('');
+
+  document.getElementById('f-date').value = new Date().toISOString().slice(0, 10);
+
+  /* ---------- 类型切换 ---------- */
+  function setType(type) {
+    state.type = type;
+    [].forEach.call(document.querySelectorAll('.type-card'), function (card) {
+      card.classList.toggle('on', card.dataset.type === type);
+    });
+    document.getElementById('placeLabel').textContent = (type === 'lost' ? '丢失' : '拾获') + '地点';
+    clearErrors();
+  }
+
+  document.getElementById('typeCards').addEventListener('click', function (e) {
+    var card = e.target.closest('.type-card');
+    if (card) setType(card.dataset.type);
+  });
+
+  /* ---------- 照片 ---------- */
+  function renderPhotos() {
+    var row = document.getElementById('photoRow');
+    var cells = state.photos.map(function (src, i) {
+      return '<div class="photo-cell">' +
+        '<img src="' + src + '" alt="">' +
+        '<button class="del" type="button" data-del="' + i + '" aria-label="删除">✕</button>' +
+      '</div>';
+    });
+    if (state.photos.length < C.MAX_PHOTOS) {
+      cells.push('<div class="photo-cell" id="addPhoto">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4.5" width="18" height="15" rx="3"/>' +
+        '<circle cx="8.6" cy="9.6" r="1.6"/><path d="M4 17.4l4.6-4.6L12 16l3.1-3.1 4.9 4.9"/></svg>' +
+        '添加照片</div>');
+    }
+    row.innerHTML = cells.join('');
+    var add = document.getElementById('addPhoto');
+    if (add) add.addEventListener('click', function () { document.getElementById('photoInput').click(); });
+  }
+
+  document.getElementById('photoRow').addEventListener('click', function (e) {
+    var del = e.target.closest('[data-del]');
+    if (!del) return;
+    state.photos.splice(Number(del.dataset.del), 1);
+    renderPhotos();
+  });
+
+  document.getElementById('photoInput').addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (state.photos.length >= C.MAX_PHOTOS) {
+      UI.toast('最多上传 ' + C.MAX_PHOTOS + ' 张照片');
+      return;
+    }
+    UI.readImage(file, 720).then(function (dataUrl) {
+      state.photos.push(dataUrl);
+      renderPhotos();
+    }).catch(function (err) {
+      UI.toast(err.message || '图片处理失败');
+    });
+  });
+
+  /* ---------- 错误提示 ---------- */
+  function clearErrors() {
+    [].forEach.call(document.querySelectorAll('.err'), function (el) { el.textContent = ''; });
+    [].forEach.call(document.querySelectorAll('.control'), function (el) { el.classList.remove('invalid'); });
+  }
+
+  var FIELD_ID = {
+    title: 'f-title', category: 'f-category', place: 'f-place',
+    date: 'f-date', desc: 'f-desc', contact: 'f-contact'
+  };
+
+  function showErrors(errors) {
+    clearErrors();
+    errors.forEach(function (err) {
+      var box = document.querySelector('[data-err="' + err.field + '"]');
+      if (box) box.textContent = err.message;
+      var input = FIELD_ID[err.field] ? document.getElementById(FIELD_ID[err.field]) : null;
+      if (input) input.classList.add('invalid');
+    });
+    var first = errors[0];
+    if (first && FIELD_ID[first.field]) document.getElementById(FIELD_ID[first.field]).focus();
+  }
+
+  /* ---------- 提交 ---------- */
+  document.getElementById('submitBtn').addEventListener('click', function () {
+    var draft = {
+      type: state.type,
+      title: document.getElementById('f-title').value,
+      category: document.getElementById('f-category').value,
+      place: document.getElementById('f-place').value,
+      date: document.getElementById('f-date').value,
+      desc: document.getElementById('f-desc').value,
+      contact: document.getElementById('f-contact').value,
+      photos: state.photos,
+      ownerId: localStorage.getItem(C.USER_KEY) || 'local-user'
+    };
+
+    var result = repo.add(draft);
+    if (!result.ok) {
+      showErrors(result.errors);
+      UI.toast('还有 ' + result.errors.length + ' 处需要修改');
+      return;
+    }
+    location.href = 'success.html?id=' + encodeURIComponent(result.item.id);
+  });
+
+  /* ---------- 初始化 ---------- */
+  setType(UI.param('type') === 'found' ? 'found' : 'lost');
+  renderPhotos();
+})();
+</script>
+</body>
+</html>

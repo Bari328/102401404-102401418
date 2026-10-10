@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>我的发布 · 校园失物招领</title>
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/pages.css">
+</head>
+<body>
+<div class="app">
+  <div id="topbar"></div>
+
+  <main class="page">
+    <section class="mine-head">
+      <div class="row1">
+        <div class="avatar">我</div>
+        <div>
+          <h1>我的发布</h1>
+          <div class="sub">管理你发布过的寻物与招领信息</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="stat-card" id="statCard"></div>
+
+    <div class="mine-tabs" id="mineTabs">
+      <button class="chip on" type="button" data-type="all">全部</button>
+      <button class="chip" type="button" data-type="lost">我发布的寻物</button>
+      <button class="chip" type="button" data-type="found">我发布的招领</button>
+      <button class="chip" type="button" data-type="done">已结束</button>
+    </div>
+
+    <div class="mine-list" id="list"></div>
+    <div id="emptyBox" hidden class="section"></div>
+  </main>
+
+  <div id="tabbar"></div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/repo.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  'use strict';
+  var LF = window.LF, UI = LF.UI, C = LF.CONFIG;
+
+  UI.mountShell({ tab: 'mine' });
+
+  var repo = LF.createRepo({ storage: LF.browserStorage(), key: C.ITEM_KEY, seed: LF.createSeedItems() });
+  repo.load();
+
+  var ME = localStorage.getItem(C.USER_KEY) || 'local-user';
+  var state = { type: 'all' };
+
+  function mineItems() {
+    return repo.all().filter(function (it) { return it.ownerId === ME; });
+  }
+
+  function currentList() {
+    var list = mineItems();
+    if (state.type === 'done') return list.filter(function (it) { return it.status === 'done'; });
+    if (state.type === 'lost' || state.type === 'found') {
+      return list.filter(function (it) { return it.type === state.type; });
+    }
+    return list;
+  }
+
+  function renderStat() {
+    var list = mineItems();
+    var lost = list.filter(function (i) { return i.type === 'lost'; }).length;
+    var found = list.filter(function (i) { return i.type === 'found'; }).length;
+    var done = list.filter(function (i) { return i.status === 'done'; }).length;
+    document.getElementById('statCard').innerHTML =
+      '<div class="st"><div class="num o">' + lost + '</div><div class="lb">我的寻物</div></div>' +
+      '<div class="st"><div class="num">' + found + '</div><div class="lb">我的招领</div></div>' +
+      '<div class="st"><div class="num g">' + done + '</div><div class="lb">已完成</div></div>';
+  }
+
+  function renderList() {
+    var list = currentList().sort(function (a, b) { return b.createdAt - a.createdAt; });
+    var box = document.getElementById('list');
+    var empty = document.getElementById('emptyBox');
+
+    if (!list.length) {
+      box.innerHTML = '';
+      empty.hidden = false;
+      empty.innerHTML =
+        '<div class="empty">' +
+          '<div class="ic">' + UI.icon('image', 30) + '</div>' +
+          '<h3>这里还没有信息</h3>' +
+          '<p>你发布的寻物和招领信息会出现在这里。</p>' +
+          '<div style="margin-top:18px"><a class="btn btn-orange" href="publish.html">去发布一条</a></div>' +
+        '</div>';
+      return;
+    }
+    empty.hidden = true;
+
+    box.innerHTML = list.map(function (it) {
+      var done = it.status === 'done';
+      var tagCls = done ? 'tag-done' : (it.type === 'lost' ? 'tag-lost' : 'tag-found');
+      var tagText = done ? LF.doneLabel(it.type) : LF.typeInfo(it.type).label;
+      var thumb = it.photos && it.photos[0]
+        ? '<img src="' + it.photos[0] + '" alt="">'
+        : UI.categoryIcon(it.category, 26);
+
+      return '<section class="mine-item" data-id="' + it.id + '">' +
+        '<div class="top" data-open="' + it.id + '">' +
+          '<div class="thumb t-' + it.type + '" style="width:56px;height:56px;flex:0 0 56px;border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;' +
+            (it.photos && it.photos[0] ? '' : 'background:var(--app-bg);color:var(--ink-3)') + '">' + thumb + '</div>' +
+          '<div class="info" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">' +
+            '<div class="line1" style="display:flex;align-items:center;gap:6px">' +
+              '<span class="title" style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + UI.escapeHtml(it.title) + '</span>' +
+              '<span class="tag ' + tagCls + '">' + tagText + '</span>' +
+            '</div>' +
+            '<div class="meta" style="display:flex;gap:10px;font-size:11.5px;color:var(--ink-3)">' +
+              '<span>' + UI.escapeHtml(it.place) + '</span><span>' + LF.timeAgo(it.createdAt) + '</span>' +
+              '<span>' + LF.daysLeft(it) + ' 天后过期</span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="acts">' +
+          (done
+            ? '<button class="btn btn-ghost btn-sm" type="button" data-reopen="' + it.id + '">恢复为进行中</button>'
+            : '<button class="btn btn-green btn-sm" type="button" data-done="' + it.id + '">标记为' + LF.doneLabel(it.type) + '</button>') +
+          '<button class="btn btn-ghost btn-sm" type="button" data-del="' + it.id + '">删除</button>' +
+        '</div>' +
+      '</section>';
+    }).join('');
+  }
+
+  document.getElementById('mineTabs').addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-type]');
+    if (!chip) return;
+    state.type = chip.dataset.type;
+    [].forEach.call(this.querySelectorAll('.chip'), function (c) { c.classList.toggle('on', c === chip); });
+    renderList();
+  });
+
+  document.getElementById('list').addEventListener('click', function (e) {
+    var doneBtn = e.target.closest('[data-done]');
+    if (doneBtn) {
+      var it = repo.find(doneBtn.dataset.done);
+      repo.setStatus(doneBtn.dataset.done, 'done');
+      UI.toast('已标记为' + LF.doneLabel(it.type));
+      renderStat(); renderList(); return;
+    }
+    var reopen = e.target.closest('[data-reopen]');
+    if (reopen) {
+      repo.setStatus(reopen.dataset.reopen, 'active');
+      UI.toast('已恢复为进行中');
+      renderStat(); renderList(); return;
+    }
+    var del = e.target.closest('[data-del]');
+    if (del) {
+      var target = repo.find(del.dataset.del);
+      var mask = UI.openSheet(
+        '<h3>确认删除？</h3>' +
+        '<p style="font-size:13px;color:var(--ink-2);line-height:1.7">「' + UI.escapeHtml(target.title) + '」删除后无法恢复。</p>' +
+        '<div class="foot">' +
+          '<button class="btn btn-ghost" type="button" data-close>再想想</button>' +
+          '<button class="btn btn-orange" type="button" data-confirm>删除</button>' +
+        '</div>');
+      mask.addEventListener('click', function (ev) {
+        if (ev.target.closest('[data-close]')) UI.closeSheet();
+        if (ev.target.closest('[data-confirm]')) {
+          repo.remove(del.dataset.del);
+          UI.closeSheet();
+          UI.toast('已删除');
+          renderStat(); renderList();
+        }
+      });
+      return;
+    }
+    var open = e.target.closest('[data-open]');
+    if (open) location.href = 'detail.html?id=' + encodeURIComponent(open.dataset.open);
+  });
+
+  renderStat();
+  renderList();
+})();
+</script>
+</body>
+</html>
